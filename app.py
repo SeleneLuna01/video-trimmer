@@ -9,7 +9,7 @@ app = Flask(__name__)
 DOWNLOAD_FOLDER = 'downloads'
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# Caché de formato info: { url: { 'info': {...}, 'ts': timestamp } }
+# Format info cache: { url: { 'info': {...}, 'ts': timestamp } }
 _formats_cache = {}
 CACHE_TTL = 300  # 5 minutos
 
@@ -182,7 +182,7 @@ def formats():
             estimated = int(BITRATE_FALLBACK.get(res, 1_000_000) * duration / 8)
             sizes[res] = {'size': format_size(estimated), 'exact': False}
 
-    # No guardamos best_format — se resuelve fresh en el momento de descargar
+    # best_format is not stored — it is resolved fresh at download time
     return jsonify({'sizes': sizes, 'available': available, 'best_format': None})
 
 
@@ -194,7 +194,7 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
     yield f"data: {json.dumps({'phase': 'downloading', 'progress': 0})}\n\n"
 
     if use_sections:
-        # Resolver formato fresco justo antes de descargar
+        # Resolve fresh format just before downloading
         yield f"data: {json.dumps({'phase': 'downloading', 'progress': 2})}\n\n"
         info = get_formats_info(url)
         if not info:
@@ -211,7 +211,7 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
                 os.remove(f)
 
         if fmt_type == 'hls_combined':
-            # Un solo stream con video+audio — una sola descarga
+            # Single stream with video+audio — one download
             cmd = [
                 'yt-dlp', '-o', video_tmp, '--no-playlist',
                 '-f', fmt_str,
@@ -247,7 +247,7 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
             )
 
         else:
-            # Streams separados: descargar video y audio por separado
+            # Separate streams: download video and audio independently
             video_fmt, audio_fmt = (fmt_str.split('+', 1) if '+' in fmt_str else (fmt_str, None))
 
             cmd_v = [
@@ -333,7 +333,7 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
         yield f"data: {json.dumps({'phase': 'done', 'progress': 100, 'filename': download_name})}\n\n"
         return
 
-    # --- Caso YouTube / no use_sections: descarga completa + ffmpeg trim ---
+    # --- YouTube / no use_sections: full download + ffmpeg trim ---
     output_path = os.path.join(DOWNLOAD_FOLDER, '%(title)s.%(ext)s')
 
     cmd = ['yt-dlp', '-o', output_path, '--merge-output-format', 'mp4',
