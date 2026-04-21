@@ -14,12 +14,13 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            padding: 40px 20px;
         }
         .container {
             background: #1a1a1a;
             border-radius: 16px;
             padding: 40px;
-            width: 480px;
+            width: 800px;
             text-align: center;
         }
         h1 { font-size: 24px; margin-bottom: 8px; }
@@ -35,10 +36,7 @@
             margin-bottom: 12px;
         }
         input[type="text"]:focus { outline: none; border-color: #666; }
-        input[type="text"]:disabled {
-            opacity: 0.3;
-            cursor: not-allowed;
-        }
+        input[type="text"]:disabled { opacity: 0.3; cursor: not-allowed; }
         .time-row {
             display: flex;
             gap: 8px;
@@ -76,6 +74,126 @@
         button:hover { opacity: 0.85; }
         button:disabled { opacity: 0.4; cursor: not-allowed; }
         .status { margin-top: 24px; color: #888; font-size: 14px; }
+
+        /* Player */
+        #playerSection { display: none; margin-bottom: 16px; }
+        #playerWrapper {
+            position: relative;
+            width: 100%;
+            padding-top: 56.25%;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #000;
+            margin-bottom: 12px;
+        }
+        #playerWrapper iframe, #playerWrapper video {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            border: none;
+        }
+
+        /* Timeline */
+        #timeline {
+            position: relative;
+            height: 36px;
+            background: #222;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            cursor: pointer;
+        }
+        #timelineRange {
+            position: absolute;
+            top: 0; height: 100%;
+            background: rgba(255,255,255,0.15);
+            border-radius: 8px;
+            pointer-events: none;
+        }
+        #timelinePlayhead {
+            position: absolute;
+            top: 0; height: 100%;
+            width: 2px;
+            background: #fff;
+            pointer-events: none;
+        }
+        .marker {
+            position: absolute;
+            top: 0; height: 100%;
+            width: 4px;
+            border-radius: 2px;
+            cursor: ew-resize;
+            transform: translateX(-50%);
+        }
+        #markerStart { background: #4ade80; }
+        #markerEnd { background: #f87171; }
+
+        /* Set buttons */
+        .set-row { display: flex; gap: 8px; margin-bottom: 12px; }
+        .set-btn {
+            flex: 1;
+            background: #222;
+            color: #fff;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 13px;
+            cursor: pointer;
+            width: auto;
+            transition: background 0.2s;
+        }
+        .set-btn:hover { background: #2a2a2a; opacity: 1; }
+        .set-btn span { display: block; font-size: 11px; color: #666; margin-top: 2px; }
+        .preview-active { border-color: #4ade80 !important; color: #4ade80 !important; }
+
+        /* Action row */
+        .action-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .action-row button { margin: 0; }
+        #trimBtn { flex: 3; }
+        #addToQueueBtn {
+            flex: 1;
+            background: #222;
+            color: #fff;
+            border: 1px solid #333;
+            font-size: 13px;
+        }
+        #addToQueueBtn:hover { background: #2a2a2a; opacity: 1; }
+
+        /* Queue */
+        #queueSection { display: none; margin-top: 24px; }
+        #queueSection h3 { font-size: 14px; color: #888; margin-bottom: 12px; text-align: left; }
+        .queue-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #222;
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin-bottom: 8px;
+            text-align: left;
+        }
+        .queue-item-info { flex: 1; }
+        .queue-item-name { font-size: 13px; font-weight: 500; }
+        .queue-item-meta { font-size: 11px; color: #555; margin-top: 2px; }
+        .queue-remove {
+            background: none;
+            border: none;
+            color: #555;
+            cursor: pointer;
+            font-size: 16px;
+            width: auto;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        .queue-remove:hover { color: #f87171; background: none; opacity: 1; }
+        #downloadAllBtn {
+            margin-top: 8px;
+            background: #fff;
+            color: #000;
+        }
     </style>
 </head>
 <body>
@@ -84,6 +202,30 @@
         <p>Download and trim clips from any video</p>
 
         <input type="text" id="urlInput" placeholder="Paste video URL (YouTube, etc.)">
+
+        <div id="playerSection">
+            <div id="playerWrapper">
+                <div id="youtubePlayer"></div>
+                <video id="html5Player" controls style="display:none;"></video>
+            </div>
+            <div id="timeline">
+                <div id="timelineRange"></div>
+                <div id="timelinePlayhead"></div>
+                <div class="marker" id="markerStart"></div>
+                <div class="marker" id="markerEnd"></div>
+            </div>
+            <button id="previewBtn" class="set-btn" style="margin-bottom:8px;">▶ Preview Clip</button>
+            <div class="set-row">
+                <button class="set-btn" id="setStartBtn">
+                    Set Start
+                    <span id="startDisplay">--:--:--</span>
+                </button>
+                <button class="set-btn" id="setEndBtn">
+                    Set End
+                    <span id="endDisplay">--:--:--</span>
+                </button>
+            </div>
+        </div>
 
         <div class="time-row">
             <input type="text" id="startInput" placeholder="Start (00:01:30)">
@@ -96,20 +238,237 @@
 
         <input type="text" id="filenameInput" placeholder="Filename (optional, default: clip.mp4)" disabled>
 
-        <button id="trimBtn" disabled>Download Clip</button>
+        <div class="action-row">
+            <button id="trimBtn" disabled>Download Clip</button>
+            <button id="addToQueueBtn" disabled>+ Add to Queue</button>
+        </div>
+
         <div class="status" id="status"></div>
+
+        <div id="progressBar" style="display:none; margin-top:12px; background:#222; border-radius:8px; overflow:hidden; height:6px;">
+            <div id="progressFill" style="height:100%; width:0%; background:#fff; border-radius:8px; transition:width 0.3s;"></div>
+        </div>
+
+        <!-- Queue -->
+        <div id="queueSection">
+            <h3>Queue (<span id="queueCount">0</span> clips)</h3>
+            <div id="queueList"></div>
+            <button id="downloadAllBtn">⬇ Download All</button>
+        </div>
     </div>
 
     <script>
         const trimBtn = document.getElementById('trimBtn');
+        const addToQueueBtn = document.getElementById('addToQueueBtn');
         const status = document.getElementById('status');
         const startInput = document.getElementById('startInput');
         const endInput = document.getElementById('endInput');
         const urlInput = document.getElementById('urlInput');
         const qualitySelect = document.getElementById('qualitySelect');
         const filenameInput = document.getElementById('filenameInput');
+        const playerSection = document.getElementById('playerSection');
 
         let calcTimeout = null;
+        let ytPlayer = null;
+        let videoDuration = 0;
+        let startSeconds = 0;
+        let endSeconds = 0;
+        let playheadInterval = null;
+        let queue = [];
+        let bestFormat = null;
+
+        function extractYouTubeId(url) {
+            const match = url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+            return match ? match[1] : null;
+        }
+
+        function secondsToTimestamp(s) {
+            const h = Math.floor(s / 3600);
+            const m = Math.floor((s % 3600) / 60);
+            const sec = Math.floor(s % 60);
+            return [h, m, sec].map(x => String(x).padStart(2, '0')).join(':');
+        }
+
+        function timestampToSeconds(t) {
+            const parts = t.split(':').map(Number);
+            if (parts.length === 3) return parts[0]*3600 + parts[1]*60 + parts[2];
+            if (parts.length === 2) return parts[0]*60 + parts[1];
+            return parts[0];
+        }
+
+        function updateTimeline() {
+            if (!videoDuration) return;
+            const startPct = (startSeconds / videoDuration) * 100;
+            const endPct = (endSeconds / videoDuration) * 100;
+            document.getElementById('timelineRange').style.left = startPct + '%';
+            document.getElementById('timelineRange').style.width = (endPct - startPct) + '%';
+            document.getElementById('markerStart').style.left = startPct + '%';
+            document.getElementById('markerEnd').style.left = endPct + '%';
+        }
+
+        function updatePlayhead(currentTime) {
+            if (!videoDuration) return;
+            const pct = (currentTime / videoDuration) * 100;
+            document.getElementById('timelinePlayhead').style.left = pct + '%';
+        }
+
+        function setupMarkerDrag(markerId, isStart) {
+            const marker = document.getElementById(markerId);
+            let dragging = false;
+            marker.addEventListener('mousedown', (e) => { dragging = true; e.preventDefault(); });
+            document.addEventListener('mousemove', (e) => {
+                if (!dragging) return;
+                const timeline = document.getElementById('timeline');
+                const rect = timeline.getBoundingClientRect();
+                let pct = (e.clientX - rect.left) / rect.width;
+                pct = Math.max(0, Math.min(1, pct));
+                const secs = pct * videoDuration;
+                if (isStart) {
+                    startSeconds = Math.min(secs, endSeconds - 1);
+                    startInput.value = secondsToTimestamp(startSeconds);
+                    document.getElementById('startDisplay').textContent = secondsToTimestamp(startSeconds);
+                } else {
+                    endSeconds = Math.max(secs, startSeconds + 1);
+                    endInput.value = secondsToTimestamp(endSeconds);
+                    document.getElementById('endDisplay').textContent = secondsToTimestamp(endSeconds);
+                }
+                if (ytPlayer) {
+                    ytPlayer.seekTo(isStart ? startSeconds : endSeconds, true);
+                } else {
+                    document.getElementById('html5Player').currentTime = isStart ? startSeconds : endSeconds;
+                }
+                updateTimeline();
+                triggerCalc();
+            });
+            document.addEventListener('mouseup', () => { dragging = false; });
+        }
+
+        setupMarkerDrag('markerStart', true);
+        setupMarkerDrag('markerEnd', false);
+
+        document.getElementById('setStartBtn').addEventListener('click', () => {
+            const t = ytPlayer ? ytPlayer.getCurrentTime() : (document.getElementById('html5Player').currentTime || 0);
+            startSeconds = t;
+            startInput.value = secondsToTimestamp(t);
+            document.getElementById('startDisplay').textContent = secondsToTimestamp(t);
+            updateTimeline();
+            triggerCalc();
+        });
+
+        document.getElementById('setEndBtn').addEventListener('click', () => {
+            const t = ytPlayer ? ytPlayer.getCurrentTime() : (document.getElementById('html5Player').currentTime || 0);
+            endSeconds = t;
+            endInput.value = secondsToTimestamp(t);
+            document.getElementById('endDisplay').textContent = secondsToTimestamp(t);
+            updateTimeline();
+            triggerCalc();
+        });
+
+        window.onYouTubeIframeAPIReady = function() {};
+
+        function loadYouTubePlayer(videoId) {
+            if (ytPlayer) { ytPlayer.loadVideoById(videoId); return; }
+            ytPlayer = new YT.Player('youtubePlayer', {
+                videoId: videoId,
+                playerVars: { controls: 1, rel: 0 },
+                events: {
+                    onReady: (e) => {
+                        videoDuration = e.target.getDuration();
+                        endSeconds = videoDuration;
+                        startSeconds = 0;
+                        updateTimeline();
+                        clearInterval(playheadInterval);
+                        playheadInterval = setInterval(() => updatePlayhead(ytPlayer.getCurrentTime()), 500);
+                    }
+                }
+            });
+        }
+
+        let previewMode = false;
+        let previewInterval = null;
+
+        document.getElementById('previewBtn').addEventListener('click', () => {
+            const btn = document.getElementById('previewBtn');
+            previewMode = !previewMode;
+            if (previewMode) {
+                btn.textContent = '⏹ Stop Preview';
+                btn.classList.add('preview-active');
+                ytPlayer.seekTo(startSeconds, true);
+                ytPlayer.playVideo();
+                previewInterval = setInterval(() => {
+                    const current = ytPlayer.getCurrentTime();
+                    updatePlayhead(current);
+                    if (current >= endSeconds) ytPlayer.seekTo(startSeconds, true);
+                }, 100);
+            } else {
+                btn.textContent = '▶ Preview Clip';
+                btn.classList.remove('preview-active');
+                ytPlayer.pauseVideo();
+                clearInterval(previewInterval);
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (!ytPlayer) return;
+            const current = ytPlayer.getCurrentTime();
+            if (e.key === 'ArrowRight') ytPlayer.seekTo(current + (e.shiftKey ? 5 : 0.5), true);
+            else if (e.key === 'ArrowLeft') ytPlayer.seekTo(current - (e.shiftKey ? 5 : 0.5), true);
+        });
+
+        function loadHTML5Player(url) {
+            const video = document.getElementById('html5Player');
+            video.style.display = 'block';
+            document.getElementById('youtubePlayer').style.display = 'none';
+            video.src = url;
+            video.addEventListener('loadedmetadata', () => {
+                videoDuration = video.duration;
+                endSeconds = videoDuration;
+                startSeconds = 0;
+                updateTimeline();
+                clearInterval(playheadInterval);
+                playheadInterval = setInterval(() => updatePlayhead(video.currentTime), 500);
+            });
+            video.addEventListener('error', () => {
+                playerSection.style.display = 'none';
+                status.textContent = 'Preview not available for this URL — enter times manually.';
+            });
+        }
+
+        urlInput.addEventListener('input', () => {
+            clearTimeout(calcTimeout);
+            startInput.value = ''; endInput.value = '';
+            filenameInput.value = ''; filenameInput.disabled = true;
+            qualitySelect.innerHTML = '<option value="">Quality</option>';
+            qualitySelect.disabled = true;
+            trimBtn.disabled = true; addToQueueBtn.disabled = true;
+            status.textContent = '';
+            playerSection.style.display = 'none';
+            startSeconds = 0; endSeconds = 0;
+            document.getElementById('startDisplay').textContent = '--:--:--';
+            document.getElementById('endDisplay').textContent = '--:--:--';
+        });
+
+        urlInput.addEventListener('change', () => {
+            const url = urlInput.value.trim();
+            if (!url) return;
+            const ytId = extractYouTubeId(url);
+            if (ytId) {
+                playerSection.style.display = 'block';
+                document.getElementById('html5Player').style.display = 'none';
+                document.getElementById('youtubePlayer').style.display = 'block';
+                if (typeof YT !== 'undefined' && YT.Player) {
+                    loadYouTubePlayer(ytId);
+                } else {
+                    const tag = document.createElement('script');
+                    tag.src = 'https://www.youtube.com/iframe_api';
+                    window.onYouTubeIframeAPIReady = () => loadYouTubePlayer(ytId);
+                    document.head.appendChild(tag);
+                }
+            } else {
+                playerSection.style.display = 'block';
+                loadHTML5Player(url);
+            }
+        });
 
         function shouldCalculate() {
             return urlInput.value && startInput.value && endInput.value;
@@ -124,51 +483,41 @@
         async function fetchSizes() {
             qualitySelect.innerHTML = '<option value="">Loading...</option>';
             qualitySelect.disabled = true;
-            trimBtn.disabled = true;
+            trimBtn.disabled = true; addToQueueBtn.disabled = true;
             filenameInput.disabled = true;
             status.textContent = 'Fetching available qualities...';
-
             try {
                 const res = await fetch('/formats', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        url: urlInput.value,
-                        start: startInput.value || '0:00',
-                        end: endInput.value || '0:00'
-                    })
+                    body: JSON.stringify({ url: urlInput.value, start: startInput.value || '0:00', end: endInput.value || '0:00' })
                 });
                 const data = await res.json();
-
+                bestFormat = data.best_format || null;
                 const labels = { '4320': '8K (4320p)', '2160': '4K (2160p)', '1440': '1440p', '1080': '1080p', '720': '720p', '480': '480p', '360': '360p' };
-
                 qualitySelect.innerHTML = '';
                 const preferred = ['1080', '720'];
                 let defaultSet = false;
-
                 data.available.forEach((res) => {
                     const opt = document.createElement('option');
                     opt.value = `bestvideo[height<=${res}]+bestaudio`;
                     const sizeInfo = data.sizes[res];
                     const approx = sizeInfo.exact ? '' : '~';
                     opt.textContent = `${labels[res]}  ·  ${approx}${sizeInfo.size}`;
-                    if (!defaultSet && preferred.includes(res)) {
-                        opt.selected = true;
-                        defaultSet = true;
-                    }
+                    if (!defaultSet && preferred.includes(res)) { opt.selected = true; defaultSet = true; }
                     qualitySelect.appendChild(opt);
                 });
-
                 qualitySelect.disabled = false;
                 filenameInput.disabled = false;
                 trimBtn.disabled = false;
+                addToQueueBtn.disabled = false;
                 status.textContent = '';
-
             } catch {
                 qualitySelect.innerHTML = '<option value="bestvideo+bestaudio">Best available</option>';
                 qualitySelect.disabled = false;
                 filenameInput.disabled = false;
                 trimBtn.disabled = false;
+                addToQueueBtn.disabled = false;
                 status.textContent = '';
             }
         }
@@ -176,45 +525,92 @@
         startInput.addEventListener('blur', triggerCalc);
         endInput.addEventListener('blur', triggerCalc);
 
-        urlInput.addEventListener('input', () => {
-            startInput.value = '';
-            endInput.value = '';
-            filenameInput.value = '';
-            filenameInput.disabled = true;
-            qualitySelect.innerHTML = '<option value="">Quality</option>';
-            qualitySelect.disabled = true;
-            trimBtn.disabled = true;
-            status.textContent = '';
-        });
+        // --- Queue ---
+        function renderQueue() {
+            const list = document.getElementById('queueList');
+            const section = document.getElementById('queueSection');
+            document.getElementById('queueCount').textContent = queue.length;
+            section.style.display = queue.length > 0 ? 'block' : 'none';
+            list.innerHTML = '';
+            queue.forEach((clip, i) => {
+                const item = document.createElement('div');
+                item.className = 'queue-item';
+                item.innerHTML = `
+                    <div class="queue-item-info">
+                        <div class="queue-item-name">🎬 ${clip.filename || 'clip_' + (i+1) + '.mp4'}</div>
+                        <div class="queue-item-meta">${clip.start} → ${clip.end} · ${clip.qualityLabel}</div>
+                    </div>
+                    <button class="queue-remove" onclick="removeFromQueue(${i})">✕</button>
+                `;
+                list.appendChild(item);
+            });
+        }
 
-        trimBtn.addEventListener('click', async () => {
+        function removeFromQueue(i) {
+            queue.splice(i, 1);
+            renderQueue();
+        }
+
+        addToQueueBtn.addEventListener('click', () => {
             const url = urlInput.value;
             const start = startInput.value;
             const end = endInput.value;
+            if (!url || !start || !end) return;
 
-            if (!url || !start || !end) {
-                status.textContent = 'Please fill in all fields.';
-                return;
-            }
+            const selectedOption = qualitySelect.options[qualitySelect.selectedIndex];
+            queue.push({
+                url,
+                start,
+                end,
+                quality: qualitySelect.value || 'bestvideo[height<=1080]+bestaudio',
+                qualityLabel: selectedOption ? selectedOption.textContent : '1080p',
+                filename: filenameInput.value.trim()
+            });
+            renderQueue();
+            status.textContent = `Added to queue! (${queue.length} clip${queue.length > 1 ? 's' : ''})`;
+        });
 
-            trimBtn.disabled = true;
-            status.textContent = 'Downloading and trimming... this may take a minute ⏳';
+        document.getElementById('downloadAllBtn').addEventListener('click', async () => {
+            if (queue.length === 0) return;
+            const btn = document.getElementById('downloadAllBtn');
+            btn.disabled = true;
+            status.textContent = `Processing ${queue.length} clip${queue.length > 1 ? 's' : ''}... this may take a while ⏳`;
 
-            const formData = new FormData();
-            formData.append('url', url);
-            formData.append('start', start);
-            formData.append('end', end);
-            formData.append('quality', qualitySelect.value || 'bestvideo[height<=1080]+bestaudio');
-            formData.append('filename', filenameInput.value.trim());
+            const res = await fetch('/download_queue', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ clips: queue })
+            });
 
-            const res = await fetch('/download', { method: 'POST', body: formData });
             if (res.ok) {
-                const blob = await res.blob();
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = filenameInput.value.trim() || 'clip.mp4';
-                a.click();
+                const contentType = res.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    const data = await res.json();
+                    for (let i = 0; i < data.files.length; i++) {
+                        const file = data.files[i];
+                        status.textContent = `Downloading ${i+1} of ${data.files.length}...`;
+                        document.getElementById('progressBar').style.display = 'block';
+                        document.getElementById('progressFill').style.width = ((i+1) / data.files.length * 100) + '%';
+                        const fileRes = await fetch(`/get_file?path=${encodeURIComponent(file.path)}`);
+                        const blob = await fileRes.blob();
+                        const a = document.createElement('a');
+                        a.href = URL.createObjectURL(blob);
+                        a.download = file.name;
+                        a.click();
+                        await new Promise(r => setTimeout(r, 1000));
+                    }
+                } else {
+                    const blob = await res.blob();
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = queue[0].filename || 'clip.mp4';
+                    a.click();
+                }
+                document.getElementById('progressBar').style.display = 'none';
+                document.getElementById('progressFill').style.width = '0%';
                 status.textContent = 'Done! ✓';
+                queue = [];
+                renderQueue();
             } else {
                 try {
                     const data = await res.json();
@@ -223,6 +619,86 @@
                     status.textContent = '✗ Something went wrong';
                 }
             }
+            btn.disabled = false;
+        });
+
+        trimBtn.addEventListener('click', async () => {
+            const url = urlInput.value;
+            const start = startInput.value;
+            const end = endInput.value;
+            if (!url || !start || !end) { status.textContent = 'Please fill in all fields.'; return; }
+
+            trimBtn.disabled = true;
+            const downloadName = filenameInput.value.trim() || 'clip.mp4';
+
+            const formData = new FormData();
+            formData.append('url', url);
+            formData.append('start', start);
+            formData.append('end', end);
+            formData.append('quality', bestFormat || qualitySelect.value || 'bestvideo[height<=1080]+bestaudio');
+            formData.append('use_sections', bestFormat ? 'true' : 'false');
+            formData.append('filename', downloadName);
+
+            const progressBar = document.getElementById('progressBar');
+            const progressFill = document.getElementById('progressFill');
+            progressBar.style.display = 'block';
+            progressFill.style.width = '0%';
+
+            try {
+                const res = await fetch('/download', { method: 'POST', body: formData });
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = JSON.parse(line.slice(6));
+
+                            if (data.error) {
+                                status.textContent = '✗ ' + data.error;
+                                trimBtn.disabled = false;
+                                progressBar.style.display = 'none';
+                                return;
+                            }
+
+                            if (data.phase === 'downloading') {
+                                status.textContent = `Downloading... ${data.progress}%`;
+                                progressFill.style.width = (data.progress / 2) + '%'; // 0-50%
+                            }
+
+                            if (data.phase === 'trimming') {
+                                status.textContent = `Trimming... ${data.progress}%`;
+                                progressFill.style.width = (50 + data.progress / 2) + '%'; // 50-100%
+                            }
+
+                            if (data.phase === 'done') {
+                                progressFill.style.width = '100%';
+                                status.textContent = 'Fetching clip...';
+                                const fileRes = await fetch(`/get_trimmed?name=${encodeURIComponent(data.filename)}`);
+                                const blob = await fileRes.blob();
+                                const a = document.createElement('a');
+                                a.href = URL.createObjectURL(blob);
+                                a.download = data.filename;
+                                a.click();
+                                status.textContent = 'Done! ✓';
+                                progressBar.style.display = 'none';
+                                progressFill.style.width = '0%';
+                            }
+                        }
+                    }
+                }
+            } catch (err) {
+                status.textContent = '✗ ' + (err.message || 'Something went wrong');
+                progressBar.style.display = 'none';
+            }
+
             trimBtn.disabled = false;
         });
     </script>
