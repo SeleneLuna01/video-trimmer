@@ -11,7 +11,7 @@ os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 # Format info cache: { url: { 'info': {...}, 'ts': timestamp } }
 _formats_cache = {}
-CACHE_TTL = 300  # 5 minutos
+CACHE_TTL = 300  # 5 minutes
 
 def time_to_seconds(t):
     parts = t.split(':')
