@@ -223,7 +223,7 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
                 text=True, encoding='utf-8', errors='replace'
             )
             for line in process.stdout:
-                match = re.search(r'(\d+\.?\d*)%', line)
+                match = re.search(r'\b(\d{1,3}\.?\d*)%', line)
                 if match:
                     pct = float(match.group(1))
                     yield f"data: {json.dumps({'phase': 'downloading', 'progress': round(pct)})}\n\n"
@@ -261,7 +261,7 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
                 text=True, encoding='utf-8', errors='replace'
             )
             for line in proc_v.stdout:
-                match = re.search(r'(\d+\.?\d*)%', line)
+                match = re.search(r'\b(\d{1,3}\.?\d*)%', line)
                 if match:
                     pct = float(match.group(1)) * 0.5
                     yield f"data: {json.dumps({'phase': 'downloading', 'progress': round(pct)})}\n\n"
@@ -284,7 +284,7 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
                     text=True, encoding='utf-8', errors='replace'
                 )
                 for line in proc_a.stdout:
-                    match = re.search(r'(\d+\.?\d*)%', line)
+                    match = re.search(r'\b(\d{1,3}\.?\d*)%', line)
                     if match:
                         pct = 50 + float(match.group(1)) * 0.5
                         yield f"data: {json.dumps({'phase': 'downloading', 'progress': round(pct)})}\n\n"
@@ -344,7 +344,7 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
         text=True, encoding='utf-8', errors='replace'
     )
     for line in process.stdout:
-        match = re.search(r'(\d+\.?\d*)%', line)
+        match = re.search(r'\b(\d{1,3}\.?\d*)%', line)
         if match:
             pct = float(match.group(1))
             yield f"data: {json.dumps({'phase': 'downloading', 'progress': round(pct)})}\n\n"

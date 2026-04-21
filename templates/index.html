@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <title>Video Trimmer</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -75,7 +76,20 @@
         button:disabled { opacity: 0.4; cursor: not-allowed; }
         .status { margin-top: 24px; color: #888; font-size: 14px; }
 
-        /* Player */
+        #autoQualityBadge {
+            display: none;
+            width: 100%;
+            background: #222;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 12px;
+            color: #888;
+            font-size: 14px;
+            margin-bottom: 12px;
+            text-align: left;
+            box-sizing: border-box;
+        }
+
         #playerSection { display: none; margin-bottom: 16px; }
         #playerWrapper {
             position: relative;
@@ -92,8 +106,6 @@
             width: 100%; height: 100%;
             border: none;
         }
-
-        /* Timeline */
         #timeline {
             position: relative;
             height: 36px;
@@ -126,8 +138,6 @@
         }
         #markerStart { background: #4ade80; }
         #markerEnd { background: #f87171; }
-
-        /* Set buttons */
         .set-row { display: flex; gap: 8px; margin-bottom: 12px; }
         .set-btn {
             flex: 1;
@@ -144,8 +154,6 @@
         .set-btn:hover { background: #2a2a2a; opacity: 1; }
         .set-btn span { display: block; font-size: 11px; color: #666; margin-top: 2px; }
         .preview-active { border-color: #4ade80 !important; color: #4ade80 !important; }
-
-        /* Action row */
         .action-row {
             display: flex;
             gap: 8px;
@@ -161,8 +169,6 @@
             font-size: 13px;
         }
         #addToQueueBtn:hover { background: #2a2a2a; opacity: 1; }
-
-        /* Queue */
         #queueSection { display: none; margin-top: 24px; }
         #queueSection h3 { font-size: 14px; color: #888; margin-bottom: 12px; text-align: left; }
         .queue-item {
@@ -236,6 +242,8 @@
             <option value="">Quality</option>
         </select>
 
+        <div id="autoQualityBadge">⚡ Best available quality will be downloaded automatically</div>
+
         <input type="text" id="filenameInput" placeholder="Filename (optional, default: clip.mp4)" disabled>
 
         <div class="action-row">
@@ -249,7 +257,6 @@
             <div id="progressFill" style="height:100%; width:0%; background:#fff; border-radius:8px; transition:width 0.3s;"></div>
         </div>
 
-        <!-- Queue -->
         <div id="queueSection">
             <h3>Queue (<span id="queueCount">0</span> clips)</h3>
             <div id="queueList"></div>
@@ -267,6 +274,7 @@
         const qualitySelect = document.getElementById('qualitySelect');
         const filenameInput = document.getElementById('filenameInput');
         const playerSection = document.getElementById('playerSection');
+        const autoQualityBadge = document.getElementById('autoQualityBadge');
 
         let calcTimeout = null;
         let ytPlayer = null;
@@ -276,6 +284,7 @@
         let playheadInterval = null;
         let queue = [];
         let bestFormat = null;
+        let isYoutube = false;
 
         function extractYouTubeId(url) {
             const match = url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
@@ -434,16 +443,30 @@
             });
         }
 
+        function setQualityUI() {
+            if (isYoutube) {
+                qualitySelect.style.display = '';
+                autoQualityBadge.style.display = 'none';
+            } else {
+                qualitySelect.style.display = 'none';
+                autoQualityBadge.style.display = 'block';
+            }
+        }
+
         urlInput.addEventListener('input', () => {
             clearTimeout(calcTimeout);
             startInput.value = ''; endInput.value = '';
             filenameInput.value = ''; filenameInput.disabled = true;
             qualitySelect.innerHTML = '<option value="">Quality</option>';
             qualitySelect.disabled = true;
+            qualitySelect.style.display = '';
+            autoQualityBadge.style.display = 'none';
             trimBtn.disabled = true; addToQueueBtn.disabled = true;
             status.textContent = '';
             playerSection.style.display = 'none';
             startSeconds = 0; endSeconds = 0;
+            bestFormat = null;
+            isYoutube = false;
             document.getElementById('startDisplay').textContent = '--:--:--';
             document.getElementById('endDisplay').textContent = '--:--:--';
         });
@@ -453,6 +476,7 @@
             if (!url) return;
             const ytId = extractYouTubeId(url);
             if (ytId) {
+                isYoutube = true;
                 playerSection.style.display = 'block';
                 document.getElementById('html5Player').style.display = 'none';
                 document.getElementById('youtubePlayer').style.display = 'block';
@@ -465,9 +489,11 @@
                     document.head.appendChild(tag);
                 }
             } else {
+                isYoutube = false;
                 playerSection.style.display = 'block';
                 loadHTML5Player(url);
             }
+            setQualityUI();
         });
 
         function shouldCalculate() {
@@ -481,6 +507,15 @@
         }
 
         async function fetchSizes() {
+            if (!isYoutube) {
+                // No-YouTube: no necesitamos el selector, solo habilitamos los botones
+                filenameInput.disabled = false;
+                trimBtn.disabled = false;
+                addToQueueBtn.disabled = false;
+                status.textContent = '';
+                return;
+            }
+
             qualitySelect.innerHTML = '<option value="">Loading...</option>';
             qualitySelect.disabled = true;
             trimBtn.disabled = true; addToQueueBtn.disabled = true;
@@ -498,13 +533,13 @@
                 qualitySelect.innerHTML = '';
                 const preferred = ['1080', '720'];
                 let defaultSet = false;
-                data.available.forEach((res) => {
+                data.available.forEach((r) => {
                     const opt = document.createElement('option');
-                    opt.value = `bestvideo[height<=${res}]+bestaudio`;
-                    const sizeInfo = data.sizes[res];
+                    opt.value = `bestvideo[height<=${r}]+bestaudio`;
+                    const sizeInfo = data.sizes[r];
                     const approx = sizeInfo.exact ? '' : '~';
-                    opt.textContent = `${labels[res]}  ·  ${approx}${sizeInfo.size}`;
-                    if (!defaultSet && preferred.includes(res)) { opt.selected = true; defaultSet = true; }
+                    opt.textContent = `${labels[r] || r + 'p'}  ·  ${approx}${sizeInfo.size}`;
+                    if (!defaultSet && preferred.includes(r)) { opt.selected = true; defaultSet = true; }
                     qualitySelect.appendChild(opt);
                 });
                 qualitySelect.disabled = false;
@@ -525,7 +560,6 @@
         startInput.addEventListener('blur', triggerCalc);
         endInput.addEventListener('blur', triggerCalc);
 
-        // --- Queue ---
         function renderQueue() {
             const list = document.getElementById('queueList');
             const section = document.getElementById('queueSection');
@@ -563,7 +597,7 @@
                 start,
                 end,
                 quality: qualitySelect.value || 'bestvideo[height<=1080]+bestaudio',
-                qualityLabel: selectedOption ? selectedOption.textContent : '1080p',
+                qualityLabel: isYoutube ? (selectedOption ? selectedOption.textContent : '1080p') : 'Best available',
                 filename: filenameInput.value.trim()
             });
             renderQueue();
@@ -669,13 +703,13 @@
                             }
 
                             if (data.phase === 'downloading') {
-                                status.textContent = `Downloading... ${data.progress}%`;
-                                progressFill.style.width = (data.progress / 2) + '%'; // 0-50%
+                                status.textContent = data.progress > 5 ? `Downloading... ${data.progress}%` : 'Downloading...';
+                                progressFill.style.width = (data.progress / 2) + '%';
                             }
 
                             if (data.phase === 'trimming') {
                                 status.textContent = `Trimming... ${data.progress}%`;
-                                progressFill.style.width = (50 + data.progress / 2) + '%'; // 50-100%
+                                progressFill.style.width = (50 + data.progress / 2) + '%';
                             }
 
                             if (data.phase === 'done') {
