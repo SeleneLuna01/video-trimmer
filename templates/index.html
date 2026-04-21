@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Trimmer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: #0f0f0f;
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: #1a1a1a;
+            border-radius: 16px;
+            padding: 40px;
+            width: 480px;
+            text-align: center;
+        }
+        h1 { font-size: 24px; margin-bottom: 8px; }
+        p { color: #888; margin-bottom: 32px; font-size: 14px; }
+        input[type="text"] {
+            width: 100%;
+            background: #222;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 12px;
+            color: #fff;
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+        input[type="text"]:focus { outline: none; border-color: #666; }
+        input[type="text"]:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+        .time-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .time-row input { margin-bottom: 0; }
+        select {
+            width: 100%;
+            background: #222;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 12px;
+            color: #fff;
+            font-size: 14px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+        }
+        select:focus { outline: none; border-color: #666; }
+        select:disabled { opacity: 0.3; cursor: not-allowed; }
+        button {
+            background: #fff;
+            color: #000;
+            border: none;
+            padding: 12px 32px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+            transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.85; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .status { margin-top: 24px; color: #888; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>✂️ Video Trimmer</h1>
+        <p>Download and trim clips from any video</p>
+
+        <input type="text" id="urlInput" placeholder="Paste video URL (YouTube, etc.)">
+
+        <div class="time-row">
+            <input type="text" id="startInput" placeholder="Start (00:01:30)">
+            <input type="text" id="endInput" placeholder="End (00:02:45)">
+        </div>
+
+        <select id="qualitySelect" disabled>
+            <option value="">Quality</option>
+        </select>
+
+        <input type="text" id="filenameInput" placeholder="Filename (optional, default: clip.mp4)" disabled>
+
+        <button id="trimBtn" disabled>Download Clip</button>
+        <div class="status" id="status"></div>
+    </div>
+
+    <script>
+        const trimBtn = document.getElementById('trimBtn');
+        const status = document.getElementById('status');
+        const startInput = document.getElementById('startInput');
+        const endInput = document.getElementById('endInput');
+        const urlInput = document.getElementById('urlInput');
+        const qualitySelect = document.getElementById('qualitySelect');
+        const filenameInput = document.getElementById('filenameInput');
+
+        let calcTimeout = null;
+
+        function shouldCalculate() {
+            return urlInput.value && startInput.value && endInput.value;
+        }
+
+        function triggerCalc() {
+            clearTimeout(calcTimeout);
+            if (!shouldCalculate()) return;
+            calcTimeout = setTimeout(fetchSizes, 600);
+        }
+
+        async function fetchSizes() {
+            qualitySelect.innerHTML = '<option value="">Loading...</option>';
+            qualitySelect.disabled = true;
+            trimBtn.disabled = true;
+            filenameInput.disabled = true;
+            status.textContent = 'Fetching available qualities...';
+
+            try {
+                const res = await fetch('/formats', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: urlInput.value,
+                        start: startInput.value || '0:00',
+                        end: endInput.value || '0:00'
+                    })
+                });
+                const data = await res.json();
+
+                const labels = { '4320': '8K (4320p)', '2160': '4K (2160p)', '1440': '1440p', '1080': '1080p', '720': '720p', '480': '480p', '360': '360p' };
+
+                qualitySelect.innerHTML = '';
+                const preferred = ['1080', '720'];
+                let defaultSet = false;
+
+                data.available.forEach((res) => {
+                    const opt = document.createElement('option');
+                    opt.value = `bestvideo[height<=${res}]+bestaudio`;
+                    const sizeInfo = data.sizes[res];
+                    const approx = sizeInfo.exact ? '' : '~';
+                    opt.textContent = `${labels[res]}  ·  ${approx}${sizeInfo.size}`;
+                    if (!defaultSet && preferred.includes(res)) {
+                        opt.selected = true;
+                        defaultSet = true;
+                    }
+                    qualitySelect.appendChild(opt);
+                });
+
+                qualitySelect.disabled = false;
+                filenameInput.disabled = false;
+                trimBtn.disabled = false;
+                status.textContent = '';
+
+            } catch {
+                qualitySelect.innerHTML = '<option value="bestvideo+bestaudio">Best available</option>';
+                qualitySelect.disabled = false;
+                filenameInput.disabled = false;
+                trimBtn.disabled = false;
+                status.textContent = '';
+            }
+        }
+
+        startInput.addEventListener('blur', triggerCalc);
+        endInput.addEventListener('blur', triggerCalc);
+
+        urlInput.addEventListener('input', () => {
+            startInput.value = '';
+            endInput.value = '';
+            filenameInput.value = '';
+            filenameInput.disabled = true;
+            qualitySelect.innerHTML = '<option value="">Quality</option>';
+            qualitySelect.disabled = true;
+            trimBtn.disabled = true;
+            status.textContent = '';
+        });
+
+        trimBtn.addEventListener('click', async () => {
+            const url = urlInput.value;
+            const start = startInput.value;
+            const end = endInput.value;
+
+            if (!url || !start || !end) {
+                status.textContent = 'Please fill in all fields.';
+                return;
+            }
+
+            trimBtn.disabled = true;
+            status.textContent = 'Downloading and trimming... this may take a minute ⏳';
+
+            const formData = new FormData();
+            formData.append('url', url);
+            formData.append('start', start);
+            formData.append('end', end);
+            formData.append('quality', qualitySelect.value || 'bestvideo[height<=1080]+bestaudio');
+            formData.append('filename', filenameInput.value.trim());
+
+            const res = await fetch('/download', { method: 'POST', body: formData });
+            if (res.ok) {
+                const blob = await res.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = filenameInput.value.trim() || 'clip.mp4';
+                a.click();
+                status.textContent = 'Done! ✓';
+            } else {
+                try {
+                    const data = await res.json();
+                    status.textContent = '✗ ' + (data.error || 'Something went wrong');
+                } catch {
+                    status.textContent = '✗ Something went wrong';
+                }
+            }
+            trimBtn.disabled = false;
+        });
+    </script>
+</body>
+</html>
