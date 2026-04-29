@@ -1,13 +1,17 @@
 # ✂️ Video Trimmer
 
-A web app to download and trim video clips from YouTube and hundreds of other sites.
+A web app to download and trim video clips from YouTube and other supported sites, or trim local video files directly.
 
 ## Features
 
-- Paste any video URL (YouTube, TikTok, Twitter, Vimeo, and more)
+- Paste any video URL (YouTube, YouTube Shorts, Twitter, Vimeo, and more)
+- Drag & drop or choose a local video file to trim without downloading anything
 - Set start and end times to extract only the clip you need
-- Automatically detects available resolutions (360p to 8K)
-- Shows estimated file size per quality before downloading
+- Interactive player with timeline, draggable markers, and clip preview loop
+- Keyboard shortcuts: `S` to set start, `E` to set end, `←` / `→` to scrub (+ `Shift` for ±5s)
+- Automatically detects available resolutions for YouTube (360p to 8K) with estimated file size
+- Full video download toggle — skip trimming and download the entire video
+- Queue system — add multiple clips from the same or different URLs and download all at once
 - Custom filename for your clip
 - Clean dark UI
 
@@ -19,10 +23,14 @@ A web app to download and trim video clips from YouTube and hundreds of other si
 
 ## Installation
 
-```bash
+```
 pip install flask yt-dlp
 ```
 
 ## Usage
 
-Run locally with `run.bat` or `py -3.11 -m flask run`
+Run locally with `run.bat` or:
+
+```
+py -3.11 -m flask run
+```
