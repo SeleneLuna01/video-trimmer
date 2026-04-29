@@ -410,6 +410,11 @@
             dropZone.classList.remove('has-file');
             clearLocalBtn.style.display = 'none';
             document.getElementById('dropZoneText').textContent = '📂 Drop a video file here or choose file';
+            // Stop and clear the video player
+            const video = document.getElementById('html5Player');
+            video.pause();
+            video.src = '';
+            video.load();
             // Re-enable URL input
             urlInput.disabled = false;
             urlInput.style.opacity = '';
@@ -454,11 +459,15 @@
                 return;
             }
 
-            // Load into HTML5 player
+            // Load into HTML5 player — reset any existing YouTube embed
+            if (ytPlayer) {
+                ytPlayer.stopVideo();
+            }
             const objectUrl = URL.createObjectURL(file);
             const video = document.getElementById('html5Player');
             video.style.display = 'block';
             document.getElementById('youtubePlayer').style.display = 'none';
+            document.getElementById('youtubePlayer').style.pointerEvents = 'none';
             playerSection.style.display = 'block';
             video.src = objectUrl;
             video.addEventListener('loadedmetadata', () => {
