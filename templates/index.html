@@ -200,6 +200,81 @@
             background: #fff;
             color: #000;
         }
+
+        /* ── Full Download Toggle ── */
+        .full-dl-row {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .full-dl-row label {
+            font-size: 12px;
+            color: #555;
+            cursor: pointer;
+            user-select: none;
+        }
+        .toggle {
+            position: relative;
+            display: inline-block;
+            width: 30px;
+            height: 16px;
+            cursor: pointer;
+        }
+        .toggle input { display: none; }
+        .toggle-track {
+            position: absolute;
+            inset: 0;
+            background: #333;
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+        .toggle input:checked + .toggle-track { background: #4a4a4a; }
+        .toggle-thumb {
+            position: absolute;
+            top: 2px; left: 2px;
+            width: 12px; height: 12px;
+            background: #555;
+            border-radius: 50%;
+            transition: transform 0.2s, background 0.2s;
+        }
+        .toggle input:checked ~ .toggle-thumb {
+            transform: translateX(14px);
+            background: #fff;
+        }
+
+        /* ── Local File Drop Zone ── */
+        #dropZone {
+            width: 100%;
+            border: 1px dashed #333;
+            border-radius: 8px;
+            padding: 14px;
+            color: #555;
+            font-size: 13px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: border-color 0.2s, color 0.2s;
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        #dropZone:hover, #dropZone.drag-over { border-color: #666; color: #aaa; }
+        #dropZone.has-file { border-color: #4ade80; color: #4ade80; }
+        #localFileInput { display: none; }
+        #clearLocalBtn {
+            display: none;
+            background: none;
+            border: none;
+            color: #555;
+            cursor: pointer;
+            font-size: 14px;
+            width: auto;
+            padding: 0 4px;
+        }
+        #clearLocalBtn:hover { color: #f87171; opacity: 1; }
     </style>
 </head>
 <body>
@@ -208,6 +283,23 @@
         <p>Download and trim clips from any video</p>
 
         <input type="text" id="urlInput" placeholder="Paste video URL (YouTube, etc.)">
+
+        <!-- Local File Drop Zone -->
+        <div id="dropZone">
+            <span id="dropZoneText">📂 Drop a video file here or <u>choose file</u></span>
+            <button id="clearLocalBtn" title="Clear local file">✕</button>
+        </div>
+        <input type="file" id="localFileInput" accept="video/*">
+
+        <!-- Full Download Toggle -->
+        <div class="full-dl-row">
+            <label for="fullDlToggle" style="font-size:12px; color:#555; cursor:pointer; user-select:none;">Full video</label>
+            <label class="toggle">
+                <input type="checkbox" id="fullDlToggle">
+                <div class="toggle-track"></div>
+                <div class="toggle-thumb"></div>
+            </label>
+        </div>
 
         <div id="playerSection">
             <div id="playerWrapper">
@@ -233,7 +325,7 @@
             </div>
         </div>
 
-        <div class="time-row">
+        <div class="time-row" id="timeRow">
             <input type="text" id="startInput" placeholder="Start (00:01:30)">
             <input type="text" id="endInput" placeholder="End (00:02:45)">
         </div>
@@ -275,6 +367,118 @@
         const filenameInput = document.getElementById('filenameInput');
         const playerSection = document.getElementById('playerSection');
         const autoQualityBadge = document.getElementById('autoQualityBadge');
+        const fullDlToggle = document.getElementById('fullDlToggle');
+        const timeRow = document.getElementById('timeRow');
+        const dropZone = document.getElementById('dropZone');
+        const localFileInput = document.getElementById('localFileInput');
+        const clearLocalBtn = document.getElementById('clearLocalBtn');
+
+        let localFileLoaded = false;
+
+        // ── Drop Zone Logic ──
+        dropZone.addEventListener('click', (e) => {
+            if (e.target === clearLocalBtn) return;
+            localFileInput.click();
+        });
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file) handleLocalFile(file);
+        });
+
+        localFileInput.addEventListener('change', () => {
+            if (localFileInput.files[0]) handleLocalFile(localFileInput.files[0]);
+        });
+
+        clearLocalBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            clearLocalFile();
+        });
+
+        function clearLocalFile() {
+            localFileLoaded = false;
+            localFileInput.value = '';
+            dropZone.classList.remove('has-file');
+            clearLocalBtn.style.display = 'none';
+            document.getElementById('dropZoneText').textContent = '📂 Drop a video file here or choose file';
+            // Re-enable URL input
+            urlInput.disabled = false;
+            urlInput.style.opacity = '';
+            // Reset everything
+            urlInput.dispatchEvent(new Event('input'));
+        }
+
+        async function handleLocalFile(file) {
+            localFileLoaded = true;
+
+            // Update drop zone UI
+            dropZone.classList.add('has-file');
+            clearLocalBtn.style.display = 'inline';
+            document.getElementById('dropZoneText').textContent = `📹 ${file.name}`;
+
+            // Disable URL input while local file is loaded
+            urlInput.value = '';
+            urlInput.disabled = true;
+            urlInput.style.opacity = '0.3';
+
+            // Hide full video toggle row and reset it
+            fullDlToggle.checked = false;
+            timeRow.style.display = '';
+            document.getElementById('timeline').style.display = '';
+            document.getElementById('previewBtn').style.display = '';
+            document.querySelector('.set-row').style.display = '';
+
+            // Hide quality selector and badge — not needed for local files
+            qualitySelect.style.display = 'none';
+            autoQualityBadge.style.display = 'none';
+
+            // Upload file to server
+            status.textContent = 'Loading file...';
+            const formData = new FormData();
+            formData.append('file', file);
+            try {
+                const res = await fetch('/upload_local', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.error) { status.textContent = '✗ ' + data.error; return; }
+            } catch (err) {
+                status.textContent = '✗ Could not load file';
+                return;
+            }
+
+            // Load into HTML5 player
+            const objectUrl = URL.createObjectURL(file);
+            const video = document.getElementById('html5Player');
+            video.style.display = 'block';
+            document.getElementById('youtubePlayer').style.display = 'none';
+            playerSection.style.display = 'block';
+            video.src = objectUrl;
+            video.addEventListener('loadedmetadata', () => {
+                videoDuration = video.duration;
+                endSeconds = videoDuration;
+                startSeconds = 0;
+                updateTimeline();
+                clearInterval(playheadInterval);
+                playheadInterval = setInterval(() => updatePlayhead(video.currentTime), 500);
+            }, { once: true });
+
+            // Enable controls
+            filenameInput.disabled = false;
+            startInput.value = '';
+            endInput.value = '';
+            trimBtn.disabled = false;
+            addToQueueBtn.disabled = false;
+            status.textContent = '';
+            isYoutube = false;
+        }
 
         let calcTimeout = null;
         let ytPlayer = null;
@@ -286,8 +490,62 @@
         let bestFormat = null;
         let isYoutube = false;
 
+        // ── Full Download Toggle ──
+        fullDlToggle.addEventListener('change', () => {
+            const full = fullDlToggle.checked;
+            timeRow.style.display = full ? 'none' : '';
+
+            // Disable/enable Set Start, Set End and Preview when full download is on
+            document.getElementById('setStartBtn').disabled = full;
+            document.getElementById('setEndBtn').disabled = full;
+            document.getElementById('previewBtn').disabled = full;
+
+            if (full && urlInput.value.trim()) {
+                if (isYoutube) {
+                    // Fetch qualities using full video duration as dummy range
+                    const dummyEnd = videoDuration ? secondsToTimestamp(videoDuration) : '1:00:00';
+                    fetch('/formats', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: urlInput.value, start: '0:00', end: dummyEnd })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        const labels = { '4320': '8K (4320p)', '2160': '4K (2160p)', '1440': '1440p', '1080': '1080p', '720': '720p', '480': '480p', '360': '360p' };
+                        qualitySelect.innerHTML = '';
+                        const preferred = ['1080', '720'];
+                        let defaultSet = false;
+                        data.available.forEach((r) => {
+                            const opt = document.createElement('option');
+                            opt.value = `bestvideo[height<=${r}]+bestaudio`;
+                            opt.textContent = labels[r] || r + 'p';
+                            if (!defaultSet && preferred.includes(r)) { opt.selected = true; defaultSet = true; }
+                            qualitySelect.appendChild(opt);
+                        });
+                        qualitySelect.disabled = false;
+                        filenameInput.disabled = false;
+                        trimBtn.disabled = false;
+                        addToQueueBtn.disabled = false;
+                    })
+                    .catch(() => {
+                        qualitySelect.innerHTML = '<option value="bestvideo+bestaudio">Best available</option>';
+                        qualitySelect.disabled = false;
+                        filenameInput.disabled = false;
+                        trimBtn.disabled = false;
+                        addToQueueBtn.disabled = false;
+                    });
+                } else {
+                    filenameInput.disabled = false;
+                    trimBtn.disabled = false;
+                    addToQueueBtn.disabled = false;
+                }
+            }
+        });
+
+        function isFullDownload() { return fullDlToggle.checked; }
+
         function extractYouTubeId(url) {
-            const match = url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+            const match = url.match(/(?:v=|youtu\.be\/|shorts\/)([a-zA-Z0-9_-]{11})/);
             return match ? match[1] : null;
         }
 
@@ -399,29 +657,54 @@
         document.getElementById('previewBtn').addEventListener('click', () => {
             const btn = document.getElementById('previewBtn');
             previewMode = !previewMode;
+            const video = document.getElementById('html5Player');
             if (previewMode) {
                 btn.textContent = '⏹ Stop Preview';
                 btn.classList.add('preview-active');
-                ytPlayer.seekTo(startSeconds, true);
-                ytPlayer.playVideo();
-                previewInterval = setInterval(() => {
-                    const current = ytPlayer.getCurrentTime();
-                    updatePlayhead(current);
-                    if (current >= endSeconds) ytPlayer.seekTo(startSeconds, true);
-                }, 100);
+                if (ytPlayer && !localFileLoaded) {
+                    ytPlayer.seekTo(startSeconds, true);
+                    ytPlayer.playVideo();
+                    previewInterval = setInterval(() => {
+                        const current = ytPlayer.getCurrentTime();
+                        updatePlayhead(current);
+                        if (current >= endSeconds) ytPlayer.seekTo(startSeconds, true);
+                    }, 100);
+                } else {
+                    video.currentTime = startSeconds;
+                    video.play();
+                    previewInterval = setInterval(() => {
+                        updatePlayhead(video.currentTime);
+                        if (video.currentTime >= endSeconds) video.currentTime = startSeconds;
+                    }, 100);
+                }
             } else {
                 btn.textContent = '▶ Preview Clip';
                 btn.classList.remove('preview-active');
-                ytPlayer.pauseVideo();
+                if (ytPlayer && !localFileLoaded) {
+                    ytPlayer.pauseVideo();
+                } else {
+                    video.pause();
+                }
                 clearInterval(previewInterval);
             }
         });
 
         document.addEventListener('keydown', (e) => {
-            if (!ytPlayer) return;
-            const current = ytPlayer.getCurrentTime();
-            if (e.key === 'ArrowRight') ytPlayer.seekTo(current + (e.shiftKey ? 5 : 0.5), true);
-            else if (e.key === 'ArrowLeft') ytPlayer.seekTo(current - (e.shiftKey ? 5 : 0.5), true);
+            if (e.target.tagName === 'INPUT') return;
+            const video = document.getElementById('html5Player');
+            const current = ytPlayer ? ytPlayer.getCurrentTime() : video.currentTime;
+
+            if (e.key === 'ArrowRight') {
+                if (ytPlayer && !localFileLoaded) ytPlayer.seekTo(current + (e.shiftKey ? 5 : 0.5), true);
+                else video.currentTime = current + (e.shiftKey ? 5 : 0.5);
+            } else if (e.key === 'ArrowLeft') {
+                if (ytPlayer && !localFileLoaded) ytPlayer.seekTo(current - (e.shiftKey ? 5 : 0.5), true);
+                else video.currentTime = current - (e.shiftKey ? 5 : 0.5);
+            } else if (e.key === 's' || e.key === 'S') {
+                document.getElementById('setStartBtn').click();
+            } else if (e.key === 'e' || e.key === 'E') {
+                document.getElementById('setEndBtn').click();
+            }
         });
 
         function loadHTML5Player(url) {
@@ -469,6 +752,11 @@
             isYoutube = false;
             document.getElementById('startDisplay').textContent = '--:--:--';
             document.getElementById('endDisplay').textContent = '--:--:--';
+            fullDlToggle.checked = false;
+            timeRow.style.display = '';
+            document.getElementById('setStartBtn').disabled = false;
+            document.getElementById('setEndBtn').disabled = false;
+            document.getElementById('previewBtn').disabled = false;
         });
 
         urlInput.addEventListener('change', () => {
@@ -494,6 +782,13 @@
                 loadHTML5Player(url);
             }
             setQualityUI();
+
+            // If full download toggle is on, enable buttons right away (no times needed)
+            if (isFullDownload()) {
+                filenameInput.disabled = false;
+                trimBtn.disabled = false;
+                addToQueueBtn.disabled = false;
+            }
         });
 
         function shouldCalculate() {
@@ -508,7 +803,6 @@
 
         async function fetchSizes() {
             if (!isYoutube) {
-                // Non-YouTube: quality selector not needed, just enable the buttons
                 filenameInput.disabled = false;
                 trimBtn.disabled = false;
                 addToQueueBtn.disabled = false;
@@ -572,7 +866,7 @@
                 item.innerHTML = `
                     <div class="queue-item-info">
                         <div class="queue-item-name">🎬 ${clip.filename || 'clip_' + (i+1) + '.mp4'}</div>
-                        <div class="queue-item-meta">${clip.start} → ${clip.end} · ${clip.qualityLabel}</div>
+                        <div class="queue-item-meta">${clip.fullDownload ? 'Full video' : clip.start + ' → ' + clip.end} · ${clip.qualityLabel}</div>
                     </div>
                     <button class="queue-remove" onclick="removeFromQueue(${i})">✕</button>
                 `;
@@ -587,15 +881,15 @@
 
         addToQueueBtn.addEventListener('click', () => {
             const url = urlInput.value;
-            const start = startInput.value;
-            const end = endInput.value;
-            if (!url || !start || !end) return;
+            if (!url) return;
+            if (!isFullDownload() && (!startInput.value || !endInput.value)) return;
 
             const selectedOption = qualitySelect.options[qualitySelect.selectedIndex];
             queue.push({
                 url,
-                start,
-                end,
+                start: isFullDownload() ? null : startInput.value,
+                end: isFullDownload() ? null : endInput.value,
+                fullDownload: isFullDownload(),
                 quality: qualitySelect.value || 'bestvideo[height<=1080]+bestaudio',
                 qualityLabel: isYoutube ? (selectedOption ? selectedOption.textContent : '1080p') : 'Best available',
                 filename: filenameInput.value.trim()
@@ -657,21 +951,97 @@
         });
 
         trimBtn.addEventListener('click', async () => {
+            // ── Local file trim path ──
+            if (localFileLoaded) {
+                const start = startInput.value;
+                const end = endInput.value;
+                if (!start || !end) { status.textContent = 'Please set start and end times.'; return; }
+
+                trimBtn.disabled = true;
+                const downloadName = filenameInput.value.trim() || 'clip.mp4';
+                const formData = new FormData();
+                formData.append('start', start);
+                formData.append('end', end);
+                formData.append('filename', downloadName);
+
+                const progressBar = document.getElementById('progressBar');
+                const progressFill = document.getElementById('progressFill');
+                progressBar.style.display = 'block';
+                progressFill.style.width = '0%';
+
+                try {
+                    const res = await fetch('/trim_local', { method: 'POST', body: formData });
+                    const reader = res.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop();
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                const data = JSON.parse(line.slice(6));
+                                if (data.error) {
+                                    status.textContent = '✗ ' + data.error;
+                                    trimBtn.disabled = false;
+                                    progressBar.style.display = 'none';
+                                    return;
+                                }
+                                if (data.phase === 'trimming') {
+                                    status.textContent = `Trimming... ${data.progress}%`;
+                                    progressFill.style.width = data.progress + '%';
+                                }
+                                if (data.phase === 'done') {
+                                    progressFill.style.width = '100%';
+                                    status.textContent = 'Fetching file...';
+                                    const fileRes = await fetch(`/get_trimmed?name=${encodeURIComponent(data.filename)}`);
+                                    const blob = await fileRes.blob();
+                                    const a = document.createElement('a');
+                                    a.href = URL.createObjectURL(blob);
+                                    a.download = data.filename;
+                                    a.click();
+                                    status.textContent = 'Done! ✓';
+                                    progressBar.style.display = 'none';
+                                    progressFill.style.width = '0%';
+                                }
+                            }
+                        }
+                    }
+                } catch (err) {
+                    status.textContent = '✗ ' + (err.message || 'Something went wrong');
+                    progressBar.style.display = 'none';
+                }
+                trimBtn.disabled = false;
+                return;
+            }
+
+            // ── Original URL-based path (untouched) ──
             const url = urlInput.value;
+            if (!url) { status.textContent = 'Please fill in all fields.'; return; }
+
+            const full = isFullDownload();
             const start = startInput.value;
             const end = endInput.value;
-            if (!url || !start || !end) { status.textContent = 'Please fill in all fields.'; return; }
+            if (!full && (!start || !end)) { status.textContent = 'Please fill in all fields.'; return; }
 
             trimBtn.disabled = true;
             const downloadName = filenameInput.value.trim() || 'clip.mp4';
 
             const formData = new FormData();
             formData.append('url', url);
-            formData.append('start', start);
-            formData.append('end', end);
             formData.append('quality', bestFormat || qualitySelect.value || 'bestvideo[height<=1080]+bestaudio');
-            formData.append('use_sections', bestFormat ? 'true' : 'false');
             formData.append('filename', downloadName);
+
+            if (full) {
+                // Full download: no start/end, no use_sections, no trim
+                formData.append('full_download', 'true');
+            } else {
+                formData.append('start', start);
+                formData.append('end', end);
+                formData.append('use_sections', bestFormat ? 'true' : 'false');
+            }
 
             const progressBar = document.getElementById('progressBar');
             const progressFill = document.getElementById('progressFill');
@@ -714,7 +1084,7 @@
 
                             if (data.phase === 'done') {
                                 progressFill.style.width = '100%';
-                                status.textContent = 'Fetching clip...';
+                                status.textContent = 'Fetching file...';
                                 const fileRes = await fetch(`/get_trimmed?name=${encodeURIComponent(data.filename)}`);
                                 const blob = await fileRes.blob();
                                 const a = document.createElement('a');

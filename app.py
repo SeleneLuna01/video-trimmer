@@ -9,6 +9,13 @@ app = Flask(__name__)
 DOWNLOAD_FOLDER = 'downloads'
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
+# Limpiar archivos temporales al arrancar
+for _f in os.listdir(DOWNLOAD_FOLDER):
+    try:
+        os.remove(os.path.join(DOWNLOAD_FOLDER, _f))
+    except:
+        pass
+
 # Format info cache: { url: { 'info': {...}, 'ts': timestamp } }
 _formats_cache = {}
 CACHE_TTL = 300  # 5 minutes
@@ -186,7 +193,64 @@ def formats():
     return jsonify({'sizes': sizes, 'available': available, 'best_format': None})
 
 
-def process_clip(url, start, end, quality, download_name, trimmed_path, use_sections=False):
+def process_clip(url, start, end, quality, download_name, trimmed_path, use_sections=False, full_download=False):
+
+    # ── Full download: just yt-dlp, no trim ──
+    if full_download:
+        yield f"data: {json.dumps({'phase': 'downloading', 'progress': 0})}\n\n"
+
+        output_path = os.path.join(DOWNLOAD_FOLDER, '%(title)s.%(ext)s')
+        cmd = ['yt-dlp', '-o', output_path, '--merge-output-format', 'mp4',
+               '--no-playlist', '-f', quality, '--newline', url]
+
+        process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding='utf-8', errors='replace'
+        )
+        for line in process.stdout:
+            match = re.search(r'\b(\d{1,3}\.?\d*)%', line)
+            if match:
+                pct = float(match.group(1))
+                yield f"data: {json.dumps({'phase': 'downloading', 'progress': round(pct)})}\n\n"
+        process.wait()
+
+        if process.returncode != 0:
+            yield f"data: {json.dumps({'error': 'Could not download this URL.'})}\n\n"
+            return
+
+        files = [f for f in os.listdir(DOWNLOAD_FOLDER)
+                 if not f.startswith('trimmed') and not f.startswith('_tmp')]
+        if not files:
+            yield f"data: {json.dumps({'error': 'No file found after download'})}\n\n"
+            return
+
+        downloaded = os.path.join(DOWNLOAD_FOLDER, files[0])
+
+        is_youtube_url = 'youtube.com' in url or 'youtu.be' in url
+        if is_youtube_url:
+            # Remux through ffmpeg: video copy, audio to AAC (YouTube uses Opus which Windows can't play)
+            remux = subprocess.run(
+                ['ffmpeg', '-i', downloaded,
+                 '-c:v', 'copy', '-c:a', 'aac',
+                 trimmed_path, '-y'],
+                capture_output=True, text=True
+            )
+            try:
+                os.remove(downloaded)
+            except:
+                pass
+            if remux.returncode != 0 or not os.path.exists(trimmed_path):
+                yield f"data: {json.dumps({'error': 'Audio conversion failed.'})}\n\n"
+                return
+        else:
+            # Non-YouTube: move as-is, audio is already compatible
+            os.replace(downloaded, trimmed_path)
+
+        yield f"data: {json.dumps({'phase': 'done', 'progress': 100, 'filename': download_name})}\n\n"
+        return
+
+    # ── Everything below is the original untouched logic ──
+
     duration = time_to_seconds(end) - time_to_seconds(start)
     start_secs = time_to_seconds(start)
     end_secs = time_to_seconds(end)
@@ -409,11 +473,12 @@ def download():
     elif not download_name.endswith('.mp4'):
         download_name += '.mp4'
 
+    full_download = request.form.get('full_download') == 'true'
     use_sections = request.form.get('use_sections') == 'true'
     trimmed = os.path.join(DOWNLOAD_FOLDER, 'trimmed_output.mp4')
 
     return Response(
-        process_clip(url, start, end, quality, download_name, trimmed, use_sections),
+        process_clip(url, start, end, quality, download_name, trimmed, use_sections, full_download),
         mimetype='text/event-stream'
     )
 
@@ -444,7 +509,7 @@ def download_queue():
         elif not filename.endswith('.mp4'):
             filename += '.mp4'
 
-        duration = time_to_seconds(end) - time_to_seconds(start)
+        full_download = clip.get('fullDownload', False)
         output_path = os.path.join(DOWNLOAD_FOLDER, '%(title)s.%(ext)s')
 
         info = get_formats_info(url)
@@ -471,16 +536,21 @@ def download_queue():
         downloaded = os.path.join(DOWNLOAD_FOLDER, files[0])
         trimmed = os.path.join(DOWNLOAD_FOLDER, f'trimmed_{i}.mp4')
 
-        subprocess.run([
-            'ffmpeg', '-ss', start, '-i', downloaded,
-            '-t', str(duration),
-            '-c:v', 'libx264', '-c:a', 'aac', '-preset', 'fast', trimmed, '-y'
-        ], capture_output=True, text=True)
+        if full_download:
+            # No trim — just rename/move
+            os.replace(downloaded, trimmed)
+        else:
+            duration = time_to_seconds(end) - time_to_seconds(start)
+            subprocess.run([
+                'ffmpeg', '-ss', start, '-i', downloaded,
+                '-t', str(duration),
+                '-c:v', 'libx264', '-c:a', 'aac', '-preset', 'fast', trimmed, '-y'
+            ], capture_output=True, text=True)
 
-        try:
-            os.remove(downloaded)
-        except:
-            pass
+            try:
+                os.remove(downloaded)
+            except:
+                pass
 
         if os.path.exists(trimmed):
             trimmed_files.append((trimmed, filename))
@@ -500,6 +570,59 @@ def get_file():
     path = request.args.get('path')
     name = os.path.basename(path)
     return send_file(path, as_attachment=True, download_name=name)
+
+
+@app.route('/upload_local', methods=['POST'])
+def upload_local():
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'error': 'No file received'}), 400
+    save_path = os.path.join(DOWNLOAD_FOLDER, '_local_upload.mp4')
+    f.save(save_path)
+    return jsonify({'ok': True})
+
+
+@app.route('/trim_local', methods=['POST'])
+def trim_local():
+    start = request.form.get('start')
+    end = request.form.get('end')
+    download_name = request.form.get('filename', '').strip()
+    if not download_name:
+        download_name = 'clip.mp4'
+    elif not download_name.endswith('.mp4'):
+        download_name += '.mp4'
+
+    source = os.path.join(DOWNLOAD_FOLDER, '_local_upload.mp4')
+    trimmed = os.path.join(DOWNLOAD_FOLDER, 'trimmed_output.mp4')
+
+    def generate():
+        duration = time_to_seconds(end) - time_to_seconds(start)
+        yield f"data: {json.dumps({'phase': 'trimming', 'progress': 0})}\n\n"
+        ffmpeg_process = subprocess.Popen(
+            ['ffmpeg', '-ss', start, '-i', source,
+             '-t', str(duration),
+             '-c:v', 'libx264', '-c:a', 'aac', '-preset', 'fast',
+             '-pix_fmt', 'yuv420p', '-progress', 'pipe:1',
+             trimmed, '-y'],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, bufsize=1
+        )
+        for line in ffmpeg_process.stdout:
+            if line.startswith('out_time_ms='):
+                try:
+                    ms = int(line.strip().split('=')[1])
+                    secs = ms / 1_000_000
+                    pct = min(100, round(secs / duration * 100))
+                    yield f"data: {json.dumps({'phase': 'trimming', 'progress': pct})}\n\n"
+                except:
+                    pass
+        ffmpeg_process.wait()
+        if ffmpeg_process.returncode != 0:
+            yield f"data: {json.dumps({'error': 'Trim failed'})}\n\n"
+            return
+        yield f"data: {json.dumps({'phase': 'done', 'progress': 100, 'filename': download_name})}\n\n"
+
+    return Response(generate(), mimetype='text/event-stream')
 
 
 if __name__ == '__main__':
