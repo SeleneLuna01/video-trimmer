@@ -14,6 +14,7 @@ A web app to download and trim video clips from YouTube and other supported site
 - Queue system — add multiple clips from the same or different URLs and download all at once
 - Custom filename for your clip
 - Clean dark UI
+- Format selector — choose MP4 (video) or MP3 (audio only) before downloading
 
 ## Requirements
 
