@@ -428,15 +428,18 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
 
     yield f"data: {json.dumps({'phase': 'trimming', 'progress': 0})}\n\n"
 
+    is_mp3 = trimmed_path.endswith('.mp3')
+    ffmpeg_cmd = ['ffmpeg', '-ss', start, '-i', downloaded, '-t', str(duration)]
+    if is_mp3:
+        ffmpeg_cmd += ['-vn', '-acodec', 'libmp3lame', '-q:a', '2', '-progress', 'pipe:1', trimmed_path, '-y']
+    else:
+        ffmpeg_cmd += ['-c:v', 'libx264', '-c:a', 'aac', '-preset', 'fast', '-pix_fmt', 'yuv420p', '-progress', 'pipe:1', trimmed_path, '-y']
     ffmpeg_process = subprocess.Popen(
-        ['ffmpeg', '-ss', start, '-i', downloaded,
-         '-t', str(duration),
-         '-c:v', 'libx264', '-c:a', 'aac', '-preset', 'fast',
-         '-pix_fmt', 'yuv420p', '-progress', 'pipe:1',
-         trimmed_path, '-y'],
+        ffmpeg_cmd,
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         text=True, bufsize=1
     )
+
     for line in ffmpeg_process.stdout:
         if line.startswith('out_time_ms='):
             try:
@@ -468,14 +471,19 @@ def download():
     quality = request.form.get('quality', 'bestvideo+bestaudio')
 
     download_name = request.form.get('filename', '').strip()
+    output_format = request.form.get('format', 'mp4')
     if not download_name:
-        download_name = 'clip.mp4'
-    elif not download_name.endswith('.mp4'):
+        download_name = f'clip.{output_format}'
+    elif output_format == 'mp3' and not download_name.endswith('.mp3'):
+        download_name = download_name.removesuffix('.mp4') + '.mp3'
+    elif output_format == 'mp4' and not download_name.endswith('.mp4'):
         download_name += '.mp4'
 
     full_download = request.form.get('full_download') == 'true'
     use_sections = request.form.get('use_sections') == 'true'
-    trimmed = os.path.join(DOWNLOAD_FOLDER, 'trimmed_output.mp4')
+    output_format = request.form.get('format', 'mp4')
+    trimmed_ext = 'mp3' if output_format == 'mp3' else 'mp4'
+    trimmed = os.path.join(DOWNLOAD_FOLDER, f'trimmed_output.{trimmed_ext}')
 
     return Response(
         process_clip(url, start, end, quality, download_name, trimmed, use_sections, full_download),
@@ -486,7 +494,8 @@ def download():
 @app.route('/get_trimmed')
 def get_trimmed():
     name = request.args.get('name', 'clip.mp4')
-    trimmed = os.path.join(DOWNLOAD_FOLDER, 'trimmed_output.mp4')
+    ext = 'mp3' if name.endswith('.mp3') else 'mp4'
+    trimmed = os.path.join(DOWNLOAD_FOLDER, f'trimmed_output.{ext}')
     return send_file(trimmed, as_attachment=True, download_name=name)
 
 
@@ -587,23 +596,28 @@ def trim_local():
     start = request.form.get('start')
     end = request.form.get('end')
     download_name = request.form.get('filename', '').strip()
+    output_format = request.form.get('format', 'mp4')
     if not download_name:
-        download_name = 'clip.mp4'
-    elif not download_name.endswith('.mp4'):
+        download_name = 'clip.mp3' if output_format == 'mp3' else 'clip.mp4'
+    elif output_format == 'mp3' and not download_name.endswith('.mp3'):
+        download_name = download_name.removesuffix('.mp4') + '.mp3'
+    elif output_format == 'mp4' and not download_name.endswith('.mp4'):
         download_name += '.mp4'
 
     source = os.path.join(DOWNLOAD_FOLDER, '_local_upload.mp4')
-    trimmed = os.path.join(DOWNLOAD_FOLDER, 'trimmed_output.mp4')
+    trimmed = os.path.join(DOWNLOAD_FOLDER, f'trimmed_output.{output_format}')
 
     def generate():
         duration = time_to_seconds(end) - time_to_seconds(start)
         yield f"data: {json.dumps({'phase': 'trimming', 'progress': 0})}\n\n"
+        is_mp3 = output_format == 'mp3'
+        ffmpeg_cmd = ['ffmpeg', '-ss', start, '-i', source, '-t', str(duration)]
+        if is_mp3:
+            ffmpeg_cmd += ['-vn', '-acodec', 'libmp3lame', '-q:a', '2', '-progress', 'pipe:1', trimmed, '-y']
+        else:
+            ffmpeg_cmd += ['-c:v', 'libx264', '-c:a', 'aac', '-preset', 'fast', '-pix_fmt', 'yuv420p', '-progress', 'pipe:1', trimmed, '-y']
         ffmpeg_process = subprocess.Popen(
-            ['ffmpeg', '-ss', start, '-i', source,
-             '-t', str(duration),
-             '-c:v', 'libx264', '-c:a', 'aac', '-preset', 'fast',
-             '-pix_fmt', 'yuv420p', '-progress', 'pipe:1',
-             trimmed, '-y'],
+            ffmpeg_cmd,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, bufsize=1
         )

@@ -336,6 +336,11 @@
 
         <div id="autoQualityBadge">⚡ Best available quality will be downloaded automatically</div>
 
+        <select id="formatSelect" disabled>
+            <option value="mp4">MP4 (video)</option>
+            <option value="mp3">MP3 (audio only)</option>
+        </select>
+
         <input type="text" id="filenameInput" placeholder="Filename (optional, default: clip.mp4)" disabled>
 
         <div class="action-row">
@@ -369,11 +374,17 @@
         const autoQualityBadge = document.getElementById('autoQualityBadge');
         const fullDlToggle = document.getElementById('fullDlToggle');
         const timeRow = document.getElementById('timeRow');
+        const formatSelect = document.getElementById('formatSelect');
         const dropZone = document.getElementById('dropZone');
         const localFileInput = document.getElementById('localFileInput');
         const clearLocalBtn = document.getElementById('clearLocalBtn');
 
         let localFileLoaded = false;
+
+        formatSelect.addEventListener('change', () => {
+            const isMp3 = formatSelect.value === 'mp3';
+            filenameInput.placeholder = isMp3 ? 'Filename (optional, default: clip.mp3)' : 'Filename (optional, default: clip.mp4)';
+        });
 
         // ── Drop Zone Logic ──
         dropZone.addEventListener('click', (e) => {
@@ -481,6 +492,7 @@
 
             // Enable controls
             filenameInput.disabled = false;
+            formatSelect.disabled = false;
             startInput.value = '';
             endInput.value = '';
             trimBtn.disabled = false;
@@ -533,6 +545,7 @@
                         });
                         qualitySelect.disabled = false;
                         filenameInput.disabled = false;
+                        formatSelect.disabled = false;
                         trimBtn.disabled = false;
                         addToQueueBtn.disabled = false;
                     })
@@ -540,11 +553,13 @@
                         qualitySelect.innerHTML = '<option value="bestvideo+bestaudio">Best available</option>';
                         qualitySelect.disabled = false;
                         filenameInput.disabled = false;
+                        formatSelect.disabled = false;
                         trimBtn.disabled = false;
                         addToQueueBtn.disabled = false;
                     });
                 } else {
                     filenameInput.disabled = false;
+                    formatSelect.disabled = false;
                     trimBtn.disabled = false;
                     addToQueueBtn.disabled = false;
                 }
@@ -749,6 +764,7 @@
             clearTimeout(calcTimeout);
             startInput.value = ''; endInput.value = '';
             filenameInput.value = ''; filenameInput.disabled = true;
+            formatSelect.disabled = true; formatSelect.value = 'mp4';
             qualitySelect.innerHTML = '<option value="">Quality</option>';
             qualitySelect.disabled = true;
             qualitySelect.style.display = '';
@@ -795,6 +811,7 @@
             // If full download toggle is on, enable buttons right away (no times needed)
             if (isFullDownload()) {
                 filenameInput.disabled = false;
+                formatSelect.disabled = false;
                 trimBtn.disabled = false;
                 addToQueueBtn.disabled = false;
             }
@@ -813,6 +830,7 @@
         async function fetchSizes() {
             if (!isYoutube) {
                 filenameInput.disabled = false;
+                formatSelect.disabled = false;
                 trimBtn.disabled = false;
                 addToQueueBtn.disabled = false;
                 status.textContent = '';
@@ -847,6 +865,7 @@
                 });
                 qualitySelect.disabled = false;
                 filenameInput.disabled = false;
+                formatSelect.disabled = false;
                 trimBtn.disabled = false;
                 addToQueueBtn.disabled = false;
                 status.textContent = '';
@@ -854,6 +873,7 @@
                 qualitySelect.innerHTML = '<option value="bestvideo+bestaudio">Best available</option>';
                 qualitySelect.disabled = false;
                 filenameInput.disabled = false;
+                formatSelect.disabled = false;
                 trimBtn.disabled = false;
                 addToQueueBtn.disabled = false;
                 status.textContent = '';
@@ -967,11 +987,14 @@
                 if (!start || !end) { status.textContent = 'Please set start and end times.'; return; }
 
                 trimBtn.disabled = true;
-                const downloadName = filenameInput.value.trim() || 'clip.mp4';
+                const fmt = formatSelect.value || 'mp4';
+                const defaultName = fmt === 'mp3' ? 'clip.mp3' : 'clip.mp4';
+                const downloadName = filenameInput.value.trim() || defaultName;
                 const formData = new FormData();
                 formData.append('start', start);
                 formData.append('end', end);
                 formData.append('filename', downloadName);
+                formData.append('format', formatSelect.value);
 
                 const progressBar = document.getElementById('progressBar');
                 const progressFill = document.getElementById('progressFill');
@@ -1036,12 +1059,15 @@
             if (!full && (!start || !end)) { status.textContent = 'Please fill in all fields.'; return; }
 
             trimBtn.disabled = true;
-            const downloadName = filenameInput.value.trim() || 'clip.mp4';
+            const fmt = formatSelect.value || 'mp4';
+            const defaultName = fmt === 'mp3' ? 'clip.mp3' : 'clip.mp4';
+            const downloadName = filenameInput.value.trim() || defaultName;
 
             const formData = new FormData();
             formData.append('url', url);
             formData.append('quality', bestFormat || qualitySelect.value || 'bestvideo[height<=1080]+bestaudio');
             formData.append('filename', downloadName);
+            formData.append('format', formatSelect.value);
 
             if (full) {
                 // Full download: no start/end, no use_sections, no trim
