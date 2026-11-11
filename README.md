@@ -21,12 +21,19 @@ A web app to download and trim video clips from YouTube and other supported site
 - Python 3.11+
 - ffmpeg installed and in PATH
 - yt-dlp
+- Deno installed and in PATH (needed by yt-dlp for YouTube)
+- `cookies.txt` for YouTube (recommended)
 
 ## Installation
 
 ```
-pip install flask yt-dlp
+pip install flask "yt-dlp[default]"
+winget install DenoLand.Deno
 ```
+
+## YouTube cookies
+
+Export your YouTube cookies (e.g. with the **Get cookies.txt LOCALLY** extension, ideally from a secondary account) and save them as `cookies.txt` next to `app.py`. Restart the app to load them. Never commit this file.
 
 ## Usage
 

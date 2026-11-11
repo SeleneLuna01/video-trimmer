@@ -4,8 +4,36 @@ import subprocess
 import json
 import re
 import time
+import sys
 
 app = Flask(__name__)
+
+# ── Ajuste por cambios de YouTube / yt-dlp (nov 2026) ─────────────────────
+# - Usa el yt-dlp del mismo Python que corre la app (el que actualizás con pip)
+# - Cliente tv,web_safari: evita los 403 al bajar el video
+# - cookies.txt (si existe al lado de app.py): evita el "Sign in to confirm you're not a bot"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+COOKIES_FILE = os.path.join(BASE_DIR, 'cookies.txt')
+YTDLP = [sys.executable, '-m', 'yt_dlp',
+         '--extractor-args', 'youtube:player_client=tv,web_safari']
+if os.path.exists(COOKIES_FILE):
+    YTDLP += ['--cookies', COOKIES_FILE]
+
+
+def log_ytdlp_error(lines):
+    """Muestra en la consola las últimas líneas de yt-dlp cuando falla."""
+    print('\n[yt-dlp ERROR] ' + '-' * 50)
+    print(''.join(lines[-25:]).rstrip())
+    print('-' * 64 + '\n')
+
+
+def with_fallback(fmt):
+    """Agrega alternativas al formato pedido: con los clientes nuevos de YouTube
+    a veces no existe 'video solo + audio solo' y hay que caer en el formato combinado."""
+    if fmt and fmt.isdigit():
+        return f'bv*[height<={fmt}]+ba/b[height<={fmt}]/bv*+ba/b'
+    return f'{fmt}/bv*+ba/b' if fmt else 'bv*+ba/b'
+
 DOWNLOAD_FOLDER = 'downloads'
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
@@ -52,14 +80,15 @@ def get_formats_info(url):
         return cached['info']
 
     result = subprocess.run(
-        ['yt-dlp', '--no-playlist', '-J', url],
-        capture_output=True, text=True, timeout=20
+        [*YTDLP, '--no-playlist', '-J', url],
+        capture_output=True, text=True, timeout=60
     )
     try:
         info = json.loads(result.stdout)
         _formats_cache[url] = {'info': info, 'ts': now}
         return info
     except:
+        log_ytdlp_error(result.stderr.splitlines(keepends=True))
         return None
 
 
@@ -200,14 +229,16 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
         yield f"data: {json.dumps({'phase': 'downloading', 'progress': 0})}\n\n"
 
         output_path = os.path.join(DOWNLOAD_FOLDER, '%(title)s.%(ext)s')
-        cmd = ['yt-dlp', '-o', output_path, '--merge-output-format', 'mp4',
-               '--no-playlist', '-f', quality, '--newline', url]
+        cmd = [*YTDLP, '-o', output_path, '--merge-output-format', 'mp4',
+               '--no-playlist', '-f', with_fallback(quality), '--newline', url]
 
         process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding='utf-8', errors='replace'
         )
+        process_lines = []
         for line in process.stdout:
+            process_lines.append(line)
             match = re.search(r'\b(\d{1,3}\.?\d*)%', line)
             if match:
                 pct = float(match.group(1))
@@ -215,6 +246,7 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
         process.wait()
 
         if process.returncode != 0:
+            log_ytdlp_error(process_lines)
             yield f"data: {json.dumps({'error': 'Could not download this URL.'})}\n\n"
             return
 
@@ -277,7 +309,7 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
         if fmt_type == 'hls_combined':
             # Single stream with video+audio — one download
             cmd = [
-                'yt-dlp', '-o', video_tmp, '--no-playlist',
+                *YTDLP, '-o', video_tmp, '--no-playlist',
                 '-f', fmt_str,
                 '--download-sections', f'*{start_secs}-{end_secs}',
                 '--force-keyframes-at-cuts', '--newline', url
@@ -286,7 +318,9 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding='utf-8', errors='replace'
             )
+            process_lines = []
             for line in process.stdout:
+                process_lines.append(line)
                 match = re.search(r'\b(\d{1,3}\.?\d*)%', line)
                 if match:
                     pct = float(match.group(1))
@@ -294,6 +328,7 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
             process.wait()
 
             if process.returncode != 0 or not os.path.exists(video_tmp):
+                log_ytdlp_error(process_lines)
                 yield f"data: {json.dumps({'error': 'Download failed.'})}\n\n"
                 return
 
@@ -315,7 +350,7 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
             video_fmt, audio_fmt = (fmt_str.split('+', 1) if '+' in fmt_str else (fmt_str, None))
 
             cmd_v = [
-                'yt-dlp', '-o', video_tmp, '--no-playlist',
+                *YTDLP, '-o', video_tmp, '--no-playlist',
                 '-f', video_fmt,
                 '--download-sections', f'*{start_secs}-{end_secs}',
                 '--force-keyframes-at-cuts', '--newline', url
@@ -324,7 +359,9 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
                 cmd_v, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding='utf-8', errors='replace'
             )
+            proc_v_lines = []
             for line in proc_v.stdout:
+                proc_v_lines.append(line)
                 match = re.search(r'\b(\d{1,3}\.?\d*)%', line)
                 if match:
                     pct = float(match.group(1)) * 0.5
@@ -332,13 +369,14 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
             proc_v.wait()
 
             if proc_v.returncode != 0 or not os.path.exists(video_tmp):
+                log_ytdlp_error(proc_v_lines)
                 yield f"data: {json.dumps({'error': 'Video stream download failed.'})}\n\n"
                 return
 
             has_audio = False
             if audio_fmt:
                 cmd_a = [
-                    'yt-dlp', '-o', audio_tmp, '--no-playlist',
+                    *YTDLP, '-o', audio_tmp, '--no-playlist',
                     '-f', audio_fmt,
                     '--download-sections', f'*{start_secs}-{end_secs}',
                     '--force-keyframes-at-cuts', '--newline', url
@@ -347,13 +385,17 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
                     cmd_a, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True, encoding='utf-8', errors='replace'
                 )
+                proc_a_lines = []
                 for line in proc_a.stdout:
+                    proc_a_lines.append(line)
                     match = re.search(r'\b(\d{1,3}\.?\d*)%', line)
                     if match:
                         pct = 50 + float(match.group(1)) * 0.5
                         yield f"data: {json.dumps({'phase': 'downloading', 'progress': round(pct)})}\n\n"
                 proc_a.wait()
                 has_audio = proc_a.returncode == 0 and os.path.exists(audio_tmp)
+                if not has_audio:
+                    log_ytdlp_error(proc_a_lines)
 
             yield f"data: {json.dumps({'phase': 'trimming', 'progress': 0})}\n\n"
             if os.path.exists(trimmed_path):
@@ -400,14 +442,16 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
     # --- YouTube / no use_sections: full download + ffmpeg trim ---
     output_path = os.path.join(DOWNLOAD_FOLDER, '%(title)s.%(ext)s')
 
-    cmd = ['yt-dlp', '-o', output_path, '--merge-output-format', 'mp4',
-           '--no-playlist', '-f', quality, '--newline', url]
+    cmd = [*YTDLP, '-o', output_path, '--merge-output-format', 'mp4',
+           '--no-playlist', '-f', with_fallback(quality), '--newline', url]
 
     process = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding='utf-8', errors='replace'
     )
+    process_lines = []
     for line in process.stdout:
+        process_lines.append(line)
         match = re.search(r'\b(\d{1,3}\.?\d*)%', line)
         if match:
             pct = float(match.group(1))
@@ -415,6 +459,7 @@ def process_clip(url, start, end, quality, download_name, trimmed_path, use_sect
     process.wait()
 
     if process.returncode != 0:
+        log_ytdlp_error(process_lines)
         yield f"data: {json.dumps({'error': 'Could not download this URL.'})}\n\n"
         return
 
@@ -526,15 +571,16 @@ def download_queue():
             fmt_str, _ = pick_best_format(info)
             format_to_use = fmt_str
         else:
-            format_to_use = quality
+            format_to_use = with_fallback(quality)
 
         result = subprocess.run(
-            ['yt-dlp', '-o', output_path, '--merge-output-format', 'mp4',
+            [*YTDLP, '-o', output_path, '--merge-output-format', 'mp4',
              '--no-playlist', '-f', format_to_use, url],
             capture_output=True, text=True
         )
 
         if result.returncode != 0:
+            log_ytdlp_error(result.stderr.splitlines(keepends=True))
             continue
 
         files = [f for f in os.listdir(DOWNLOAD_FOLDER)
